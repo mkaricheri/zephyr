@@ -77,6 +77,7 @@ struct stm32_sdmmc_priv {
 	struct stm32_pclken *pclken;
 	const struct pinctrl_dev_config *pcfg;
 	const struct reset_dt_spec reset;
+	uint32_t block_size;
 
 #if STM32_SDMMC_USE_DMA
 	struct sdmmc_dma_stream dma_rx;
@@ -259,6 +260,11 @@ static int stm32_sdmmc_access_init(struct disk_info *disk)
 {
 	const struct device *dev = disk->dev;
 	struct stm32_sdmmc_priv *priv = dev->data;
+#if STM32_SDMMC_USE_DMA || IS_ENABLED(DT_PROP(DT_DRV_INST(0), idma))
+#if defined(__DCACHE_PRESENT) && (__DCACHE_PRESENT == 1U)
+	HAL_SD_CardInfoTypeDef info;
+#endif
+#endif
 	int err;
 
 	if (priv->status == DISK_STATUS_OK) {
@@ -294,6 +300,20 @@ static int stm32_sdmmc_access_init(struct disk_info *disk)
 		LOG_ERR("failed to init stm32_sdmmc (ErrorCode 0x%X)", priv->hsd.ErrorCode);
 		return -EIO;
 	}
+
+#if STM32_SDMMC_USE_DMA || IS_ENABLED(DT_PROP(DT_DRV_INST(0), idma))
+#if defined(__DCACHE_PRESENT) && (__DCACHE_PRESENT == 1U)
+	/* need the block size to reuse in other APIs so that for DMA driver
+	 * can compute what is the data block size to do cache operation
+	 */
+	err = HAL_SD_GetCardInfo(&priv->hsd, &info);
+	if (err != HAL_OK) {
+		LOG_ERR("failed to retrieve card info\n");
+		return err;
+	}
+	priv->block_size = info.BlockSize;
+#endif
+#endif
 
 #ifdef CONFIG_SDMMC_STM32_HWFC
 	stm32_sdmmc_fc_enable(priv);
@@ -340,7 +360,12 @@ static int stm32_sdmmc_access_read(struct disk_info *disk, uint8_t *data_buf,
 	}
 
 	k_sem_take(&priv->sync, K_FOREVER);
-
+#if STM32_SDMMC_USE_DMA || IS_ENABLED(DT_PROP(DT_DRV_INST(0), idma))
+#if defined(__DCACHE_PRESENT) && (__DCACHE_PRESENT == 1U)
+	SCB_InvalidateDCache_by_Addr((uint32_t *)data_buf,
+								 num_sector * priv->block_size);
+#endif
+#endif
 	if (priv->status != DISK_STATUS_OK) {
 		LOG_ERR("sd read error %d", priv->status);
 		err = -EIO;
@@ -364,6 +389,12 @@ static int stm32_sdmmc_access_write(struct disk_info *disk,
 	int err;
 
 	k_sem_take(&priv->thread_lock, K_FOREVER);
+#if STM32_SDMMC_USE_DMA || IS_ENABLED(DT_PROP(DT_DRV_INST(0), idma))
+#if defined(__DCACHE_PRESENT) && (__DCACHE_PRESENT == 1U)
+	SCB_CleanDCache_by_Addr((uint32_t *)data_buf,
+							num_sector * priv->block_size);
+#endif
+#endif
 
 #if STM32_SDMMC_USE_DMA || IS_ENABLED(DT_PROP(DT_DRV_INST(0), idma))
 	err = HAL_SD_WriteBlocks_DMA(&priv->hsd, (uint8_t *)data_buf, start_sector,

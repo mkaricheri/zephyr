@@ -23,6 +23,7 @@
 };
 
 &sdmmc1 {
+        idma;
         sdmmc {
 		compatible = "zephyr,sdmmc-disk";
 		status = "okay";
