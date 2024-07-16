@@ -16,8 +16,8 @@
 
 	/* HW resources are split between CM7 and CM4 */
 	chosen {
-		zephyr,console = &usart1;
-		zephyr,shell-uart = &usart1;
+		/* zephyr,console = &usart1; */
+		/* zephyr,shell-uart = &usart1; */
 		zephyr,sram = &sram0;
 		zephyr,flash = &flash0;
 		zephyr,flash-controller = &mt25ql512ab1;
@@ -101,7 +101,7 @@
 };
 
 &usart1 {
-	status = "okay";
+	/* status = "okay"; */
 };
 
 &uart8 {
